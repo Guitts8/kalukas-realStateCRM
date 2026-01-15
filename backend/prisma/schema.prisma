@@ -6,17 +6,20 @@ datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
-
 model User {
   id        String   @id @default(uuid())
   name      String
   email     String   @unique
   password  String
+
   role      String   @default("USER")
+  isAdmin   Boolean  @default(false) // ✅ NOVO
+
   createdAt DateTime @default(now())
 
   imoveis ImovelUser[]
 }
+
 
 model Imovel {
   id              String   @id @default(uuid())
@@ -24,10 +27,13 @@ model Imovel {
   cidade          String
   bairro          String?
   endereco        String?
+  numeroEndereco  String?  // ✅ NOVO (número do endereço)
   cep             String?
   pontoReferencia String?
   valor           Float
 
+  // (você disse que "ATIVO/VENDIDO/ALUGADO" foi desativado na UI,
+  // mas manter a coluna não atrapalha. Se quiser remover depois, fazemos outra migração)
   status String @default("ATIVO")
 
   areaTerrenoTotal Float?
@@ -38,8 +44,13 @@ model Imovel {
   garagens    Int?
 
   descricao String?
-  situacao  String?
+  situacao  String  @default("INATIVO") // ✅ "ALUGAR" | "VENDER" | "INATIVO" (controlado na UI)
   chave     String?
+
+  haPlaca Boolean @default(false)
+
+  contatoNome     String? // ✅ NOVO
+  contatoTelefone String? // ✅ NOVO
 
   ativo Boolean @default(true)
 
@@ -58,9 +69,8 @@ model ImovelFoto {
 
   imovel Imovel @relation(fields: [imovelId], references: [id], onDelete: Cascade)
 
-  @@index([imovelId, ordem]) // ✅ index SIM, unique NÃO
+  @@index([imovelId, ordem])
 }
-
 
 model ImovelUser {
   id       String @id @default(uuid())

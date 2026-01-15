@@ -1,16 +1,14 @@
-const router = require("express").Router();
-const auth = require("../middlewares/auth");
-const isAdmin = require("../middlewares/isAdmin");
+const express = require("express");
+const router = express.Router();
+
 const controller = require("../controllers/imovelFoto.controller");
 
-router.use(auth);
-router.use(isAdmin);
+// reordenar (aceita PUT e POST)
+router.put("/reordenar", controller.reordenarFotos);
+router.post("/reordenar", controller.reordenarFotos);
 
-// listar fotos do imóvel
+// listar fotos de um imóvel
 router.get("/:id", controller.listarFotos);
-
-// reordenar fotos
-router.put("/reordenar", isAdmin, controller.reordenarFotos);
 
 // remover foto
 router.delete("/:fotoId", controller.removerFoto);

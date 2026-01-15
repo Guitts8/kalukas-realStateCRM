@@ -14,11 +14,24 @@ exports.login = async (req, res) => {
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) return res.status(401).json({ error: "Senha inválida" });
 
-  const token = jwt.sign(
-    { id: user.id, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: "8h" }
-  );
+  // ✅ garante que ADMIN é ADMIN mesmo
+  const isAdmin = !!user.isAdmin || user.role === "ADMIN";
+  const role = isAdmin ? "ADMIN" : "USER";
 
-  res.json({ token });
+  const token = jwt.sign({ id: user.id, role }, process.env.JWT_SECRET, {
+    expiresIn: "8h",
+  });
+
+  // ✅ ajuda o frontend (se quiser salvar user/role)
+  res.json({
+    token,
+    role,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role,
+      isAdmin,
+    },
+  });
 };

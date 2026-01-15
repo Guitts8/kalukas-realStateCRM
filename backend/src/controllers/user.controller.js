@@ -3,6 +3,13 @@ const bcrypt = require("bcryptjs");
 
 const prisma = new PrismaClient();
 
+function toBool(v) {
+  if (v === true || v === false) return v;
+  if (v === "true" || v === "1" || v === 1) return true;
+  if (v === "false" || v === "0" || v === 0) return false;
+  return undefined;
+}
+
 /**
  * LISTAR USUÁRIOS
  */
@@ -13,11 +20,19 @@ exports.listar = async (req, res) => {
       name: true,
       email: true,
       role: true,
-      createdAt: true
-    }
+      isAdmin: true, // ✅
+      createdAt: true,
+    },
+    orderBy: { createdAt: "desc" },
   });
 
-  res.json(users);
+  // ✅ garante consistência na resposta
+  const normalized = users.map((u) => {
+    const isAdmin = !!u.isAdmin || u.role === "ADMIN";
+    return { ...u, isAdmin, role: isAdmin ? "ADMIN" : "USER" };
+  });
+
+  res.json(normalized);
 };
 
 /**
@@ -33,21 +48,23 @@ exports.buscarPorId = async (req, res) => {
       name: true,
       email: true,
       role: true,
-      createdAt: true
-    }
+      isAdmin: true, // ✅
+      createdAt: true,
+    },
   });
 
-  if (!user)
-    return res.status(404).json({ error: "Usuário não encontrado" });
+  if (!user) return res.status(404).json({ error: "Usuário não encontrado" });
 
-  res.json(user);
+  const isAdmin = !!user.isAdmin || user.role === "ADMIN";
+  res.json({ ...user, isAdmin, role: isAdmin ? "ADMIN" : "USER" });
 };
 
 /**
  * CRIAR USUÁRIO
  */
 exports.criar = async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password } = req.body;
+  const isAdmin = toBool(req.body?.isAdmin) ?? false;
 
   if (!name || !email || !password) {
     return res.status(400).json({ error: "Campos obrigatórios" });
@@ -60,20 +77,24 @@ exports.criar = async (req, res) => {
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
+  const role = isAdmin ? "ADMIN" : "USER";
+
   const user = await prisma.user.create({
     data: {
       name,
       email,
       password: hashedPassword,
-      role: role === "ADMIN" ? "ADMIN" : "USER"
+      isAdmin,
+      role, // ✅ sempre sincronizado
     },
     select: {
       id: true,
       name: true,
       email: true,
       role: true,
-      createdAt: true
-    }
+      isAdmin: true,
+      createdAt: true,
+    },
   });
 
   res.status(201).json(user);
@@ -84,14 +105,21 @@ exports.criar = async (req, res) => {
  */
 exports.atualizar = async (req, res) => {
   const { id } = req.params;
-  const { name, email, password, role } = req.body;
+  const { name, email, password } = req.body;
 
   const data = {};
 
   if (name) data.name = name;
   if (email) data.email = email;
-  if (role) data.role = role;
 
+  // ✅ switch admin
+  const isAdmin = toBool(req.body?.isAdmin);
+  if (typeof isAdmin === "boolean") {
+    data.isAdmin = isAdmin;
+    data.role = isAdmin ? "ADMIN" : "USER";
+  }
+
+  // ✅ senha opcional
   if (password) {
     data.password = await bcrypt.hash(password, 10);
   }
@@ -105,8 +133,9 @@ exports.atualizar = async (req, res) => {
         name: true,
         email: true,
         role: true,
-        createdAt: true
-      }
+        isAdmin: true,
+        createdAt: true,
+      },
     });
 
     res.json(user);
