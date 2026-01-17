@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/services/api";
+import { isAdmin } from "@/services/auth";
 
 type Foto = {
   id?: string;
@@ -35,6 +36,9 @@ type PreviewData = {
   telefoneContato?: string;
 };
 
+type PlacaFilter = "ALL" | "COM" | "SEM";
+type SituacaoFilter = "ALL" | "VENDER" | "ALUGAR";
+
 function asNumber(v: any): number {
   if (typeof v === "number") return v;
   if (typeof v === "string") {
@@ -61,16 +65,12 @@ function normalizePhotoPath(raw?: string) {
   if (!raw) return "";
   let s = String(raw).trim();
 
-  // não tenta mostrar caminho local do Windows como URL
   if (s.startsWith("file:")) return "";
 
-  // padroniza barras
   s = s.replace(/\\/g, "/");
 
-  // se já é absoluta, devolve
   if (/^https?:\/\//i.test(s)) return s;
 
-  // tenta extrair o trecho /uploads/...
   const low = s.toLowerCase();
   const idx = low.indexOf("/uploads/");
   if (idx >= 0) return s.slice(idx);
@@ -78,19 +78,16 @@ function normalizePhotoPath(raw?: string) {
   const idx2 = low.indexOf("uploads/");
   if (idx2 >= 0) return "/" + s.slice(idx2);
 
-  // se vier só "nome.jpg" sem pasta, assume /uploads/nome.jpg
   if (!s.startsWith("/")) s = "/" + s;
   return s;
 }
 
 function getApiBase() {
-  // prioridade: ENV pública do Next (mais confiável no browser)
   const envBase = (process.env.NEXT_PUBLIC_API_URL ?? "")
     .trim()
     .replace(/\/$/, "");
   if (envBase) return envBase;
 
-  // fallback: axios baseURL
   const axiosBase = (api.defaults.baseURL ?? "")
     .toString()
     .trim()
@@ -98,15 +95,9 @@ function getApiBase() {
   return axiosBase;
 }
 
-/**
- * ✅ IMPORTANTE:
- * uploads NÃO está em /api/uploads, e sim em /uploads
- * então removemos "/api" do base quando for montar imagem
- */
 function getUploadsBase() {
   const base = getApiBase().replace(/\/$/, "");
   if (!base) return "";
-  // remove /api ou /api/
   return base.replace(/\/api\/?$/i, "");
 }
 
@@ -116,12 +107,8 @@ function resolveImgUrl(url?: string) {
   if (/^https?:\/\//i.test(normalized)) return normalized;
 
   const base = getUploadsBase();
-  if (!base) {
-    // se não tiver base, cai no relativo (vai tentar no :3000)
-    return normalized;
-  }
+  if (!base) return normalized;
 
-  // garante que começa com /
   const path = normalized.startsWith("/") ? normalized : `/${normalized}`;
   return `${base}${path}`;
 }
@@ -130,13 +117,11 @@ async function copyText(text: string) {
   const t = (text ?? "").toString().trim();
   if (!t) return;
 
-  // Clipboard API
   try {
     await navigator.clipboard.writeText(t);
     return;
   } catch {}
 
-  // fallback antigo
   try {
     const ta = document.createElement("textarea");
     ta.value = t;
@@ -206,34 +191,92 @@ function CopyIcon() {
   );
 }
 
-/** Segmented (switch premium) */
-function Segmented({
-  value,
-  onChange,
-  options,
+/* =========================
+   Modal de confirmação (UI do site)
+   ========================= */
+function ConfirmModal({
+  open,
+  title,
+  description,
+  confirmText = "Confirmar",
+  cancelText = "Cancelar",
+  danger = false,
+  loading = false,
+  onConfirm,
+  onClose,
 }: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  open: boolean;
+  title: string;
+  description?: string;
+  confirmText?: string;
+  cancelText?: string;
+  danger?: boolean;
+  loading?: boolean;
+  onConfirm: () => void | Promise<void>;
+  onClose: () => void;
 }) {
-  const base =
-    "rounded-full px-3 py-1.5 text-[11px] font-black tracking-widest transition ring-1";
-  const active =
-    "bg-amber-300/12 text-amber-100 ring-amber-300/25 shadow-[0_0_18px_rgba(251,191,36,0.10)]";
-  const normal = "bg-white/6 text-white/65 ring-white/10 hover:bg-white/8";
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
 
   return (
-    <div className="inline-flex items-center gap-1 rounded-full bg-black/20 p-1 ring-1 ring-white/10">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          className={`${base} ${value === o.value ? active : normal}`}
-        >
-          {o.label}
-        </button>
-      ))}
+    <div
+      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-3xl bg-white/[0.06] ring-1 ring-white/12 shadow-[0_24px_80px_rgba(0,0,0,0.65)] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-5 border-b border-white/10">
+          <div className="text-lg font-extrabold tracking-tight text-white">
+            {title}
+          </div>
+          {description ? (
+            <div className="mt-1 text-sm text-white/65">{description}</div>
+          ) : null}
+        </div>
+
+        <div className="px-6 py-5 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200 active:scale-[0.99] ring-1 ring-white/10 bg-white/5 hover:bg-white/8 text-white/85"
+            disabled={loading}
+          >
+            {cancelText}
+          </button>
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className={[
+              "inline-flex items-center justify-center rounded-xl px-5 py-2 text-sm font-extrabold transition-all duration-200 active:scale-[0.99]",
+              danger
+                ? "bg-rose-500/12 text-rose-100 ring-1 ring-rose-400/25 hover:bg-rose-500/16 shadow-[0_0_0_1px_rgba(244,63,94,0.18),0_0_18px_rgba(244,63,94,0.10)]"
+                : "bg-amber-300/10 text-amber-100 ring-1 ring-amber-300/25 hover:bg-amber-300/14 shadow-[0_0_0_1px_rgba(255,214,102,0.18),0_0_22px_rgba(255,214,102,0.10)]",
+              "disabled:opacity-60 disabled:cursor-not-allowed",
+            ].join(" ")}
+          >
+            {loading ? "Aguarde…" : confirmText}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -252,17 +295,22 @@ export default function ImoveisPage() {
     {}
   );
 
-  // feedback de "copiado"
   const [copiedById, setCopiedById] = useState<Record<string, boolean>>({});
 
   const inflight = useRef<Set<string>>(new Set());
 
-  // ✅ NOVO: busca + filtros
-  const [q, setQ] = useState("");
-  const [placaFilter, setPlacaFilter] = useState<"ALL" | "COM" | "SEM">("ALL");
-  const [situacaoFilter, setSituacaoFilter] = useState<
-    "ALL" | "VENDER" | "ALUGAR"
-  >("ALL");
+  // filtros
+  const [search, setSearch] = useState("");
+  const [placa, setPlaca] = useState<PlacaFilter>("ALL");
+  const [situacao, setSituacao] = useState<SituacaoFilter>("ALL");
+
+  // modal remover
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+
+  // admin (pra mostrar Comprometer)
+  const admin = useMemo(() => isAdmin(), []);
 
   async function carregarImoveis() {
     setLoading(true);
@@ -270,7 +318,7 @@ export default function ImoveisPage() {
       const res = await api.get("/imoveis");
       const data: ImovelListItem[] = Array.isArray(res.data) ? res.data : [];
       setImoveis(data);
-    } catch (e) {
+    } catch {
       alert("Erro ao carregar imóveis");
     } finally {
       setLoading(false);
@@ -339,9 +387,25 @@ export default function ImoveisPage() {
     await Promise.allSettled(workers);
   }
 
-  async function removerImovel(id: string) {
-    if (!confirm("Deseja remover este imóvel?")) return;
+  useEffect(() => {
+    if (!previewMode) return;
+    if (imoveis.length === 0) return;
+    preloadAllPreviews(filteredImoveisMemo(imoveis, search, placa, situacao));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewMode, imoveis, search, placa, situacao]);
+
+  function abrirConfirmRemover(id: string) {
+    setConfirmId(id);
+    setConfirmOpen(true);
+  }
+
+  async function removerImovelConfirmado() {
+    const id = confirmId;
+    if (!id) return;
+
     try {
+      setConfirmLoading(true);
+
       await api.delete(`/imoveis/${id}`);
       setImoveis((p) => p.filter((x) => x.id !== id));
       setPreviewCache((p) => {
@@ -356,43 +420,24 @@ export default function ImoveisPage() {
       });
     } catch {
       alert("Erro ao remover imóvel");
+    } finally {
+      setConfirmLoading(false);
+      setConfirmOpen(false);
+      setConfirmId(null);
     }
   }
 
-  const total = imoveis.length;
-
+  const totalAll = imoveis.length;
   const somaValores = useMemo(() => {
     return imoveis.reduce((acc, i) => acc + asNumber(i.valor), 0);
   }, [imoveis]);
 
-  // ✅ lista filtrada (busca por nome/título, cidade, bairro + filtros)
-  const filteredImoveis = useMemo(() => {
-    const term = q.trim().toLowerCase();
+  const filtered = useMemo(
+    () => filteredImoveisMemo(imoveis, search, placa, situacao),
+    [imoveis, search, placa, situacao]
+  );
 
-    return imoveis.filter((i) => {
-      // placa
-      if (placaFilter === "COM" && !i.haPlaca) return false;
-      if (placaFilter === "SEM" && i.haPlaca) return false;
-
-      // situação
-      const sit = normalizeSituacao(i.situacao);
-      if (situacaoFilter === "VENDER" && sit !== "PARA VENDER") return false;
-      if (situacaoFilter === "ALUGAR" && sit !== "PARA ALUGAR") return false;
-
-      // busca
-      if (!term) return true;
-      const hay = `${i.titulo ?? ""} ${i.cidade ?? ""} ${i.bairro ?? ""}`.toLowerCase();
-      return hay.includes(term);
-    });
-  }, [imoveis, q, placaFilter, situacaoFilter]);
-
-  // ✅ preload em cima da lista filtrada (quando modo prévia)
-  useEffect(() => {
-    if (!previewMode) return;
-    if (filteredImoveis.length === 0) return;
-    preloadAllPreviews(filteredImoveis);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewMode, filteredImoveis]);
+  const totalFiltered = filtered.length;
 
   const btnBase =
     "inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200 active:scale-[0.99] ring-1 ring-white/10 bg-white/5 hover:bg-white/8";
@@ -400,6 +445,10 @@ export default function ImoveisPage() {
     "inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-extrabold tracking-wide transition-all duration-200 active:scale-[0.99] " +
     "bg-amber-300/10 text-amber-100 ring-1 ring-amber-300/25 hover:bg-amber-300/14 " +
     "shadow-[0_0_0_1px_rgba(255,214,102,0.18),0_0_22px_rgba(255,214,102,0.10)]";
+  const btnWarn =
+    "inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-extrabold transition-all duration-200 active:scale-[0.99] " +
+    "bg-amber-300/10 text-amber-100 ring-1 ring-amber-300/25 hover:bg-amber-300/14 " +
+    "shadow-[0_0_0_1px_rgba(255,214,102,0.16),0_0_18px_rgba(255,214,102,0.08)]";
   const btnDanger =
     "inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-extrabold transition-all duration-200 active:scale-[0.99] " +
     "bg-rose-500/10 text-rose-100 ring-1 ring-rose-400/25 hover:bg-rose-500/14 " +
@@ -408,13 +457,14 @@ export default function ImoveisPage() {
     "inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200 active:scale-[0.99] " +
     "bg-white/4 text-white/85 ring-1 ring-white/10 hover:bg-white/7";
 
+  const segBtnBase =
+    "rounded-full px-3 py-1 text-xs font-extrabold transition-all ring-1";
+  const segActive =
+    "bg-amber-300/10 text-amber-100 ring-amber-300/25 shadow-[0_0_18px_rgba(255,214,102,0.10)]";
+  const segInactive = "bg-white/5 text-white/70 ring-white/10 hover:bg-white/8";
+
   const card =
     "rounded-3xl bg-white/[0.035] ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.55)]";
-
-  const searchInput =
-    "w-[340px] max-w-full rounded-xl border border-white/12 bg-black/30 px-4 py-2.5 " +
-    "text-sm text-white/90 placeholder:text-white/25 outline-none " +
-    "focus:border-white/18 focus:ring-2 focus:ring-amber-300/10";
 
   if (loading) {
     return (
@@ -426,19 +476,36 @@ export default function ImoveisPage() {
 
   return (
     <div className="p-10 text-white">
+      {/* MODAL REMOVER */}
+      <ConfirmModal
+        open={confirmOpen}
+        title="Remover imóvel?"
+        description="Essa ação remove o imóvel do sistema."
+        confirmText="Remover"
+        cancelText="Cancelar"
+        danger
+        loading={confirmLoading}
+        onClose={() => {
+          if (confirmLoading) return;
+          setConfirmOpen(false);
+          setConfirmId(null);
+        }}
+        onConfirm={removerImovelConfirmado}
+      />
+
       {/* HEADER */}
       <div className={card + " p-8"}>
         <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
+          <div>
             <h1 className="text-4xl font-extrabold tracking-tight">Imóveis</h1>
             <p className="mt-1 text-white/65">
               Gerencie sua carteira de imóveis com visual moderno e rápido.
             </p>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              {pill("neutral", `Total: ${total}`)}
+              {pill("neutral", `Total: ${totalAll}`)}
               {pill("neutral", `Soma valores: ${moneyBRL(somaValores)}`)}
-              {pill("neutral", `Mostrando: ${filteredImoveis.length}`)}
+              {pill("neutral", `Mostrando: ${totalFiltered}`)}
 
               <div className="ml-1 inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 ring-1 ring-white/10">
                 <span className="text-xs text-white/70">Modo:</span>
@@ -475,58 +542,116 @@ export default function ImoveisPage() {
               )}
             </div>
 
-            {/* ✅ BUSCA + FILTROS */}
-            <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
-              {/* Busca */}
-              <div className="relative">
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Buscar por nome, cidade ou bairro…"
-                  className={searchInput}
-                />
-                {q ? (
-                  <button
-                    type="button"
-                    onClick={() => setQ("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs text-white/60 hover:bg-white/10"
-                    title="Limpar"
-                  >
-                    ✕
-                  </button>
-                ) : null}
+            {/* FILTROS */}
+            <div className="mt-5 flex flex-col gap-3">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <div className="flex-1">
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar por nome, cidade ou bairro…"
+                    className="w-full rounded-2xl bg-white/5 px-4 py-3 text-sm text-white/90 placeholder:text-white/35 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-amber-200/20"
+                  />
+                </div>
+
+                <button
+                  className={btnBase}
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setPlaca("ALL");
+                    setSituacao("ALL");
+                  }}
+                  title="Limpar filtros"
+                >
+                  Limpar
+                </button>
               </div>
 
-              {/* Placa */}
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-black tracking-widest text-white/45">
-                  PLACA
-                </span>
-                <Segmented
-                  value={placaFilter}
-                  onChange={(v) => setPlacaFilter(v as any)}
-                  options={[
-                    { value: "ALL", label: "TODOS" },
-                    { value: "COM", label: "COM PLACA" },
-                    { value: "SEM", label: "SEM PLACA" },
-                  ]}
-                />
-              </div>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-black tracking-widest text-white/45">
+                      PLACA
+                    </span>
 
-              {/* Situação */}
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-black tracking-widest text-white/45">
-                  SITUAÇÃO
-                </span>
-                <Segmented
-                  value={situacaoFilter}
-                  onChange={(v) => setSituacaoFilter(v as any)}
-                  options={[
-                    { value: "ALL", label: "TODAS" },
-                    { value: "VENDER", label: "VENDER" },
-                    { value: "ALUGAR", label: "ALUGAR" },
-                  ]}
-                />
+                    <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-2 py-1 ring-1 ring-white/10">
+                      <button
+                        type="button"
+                        onClick={() => setPlaca("ALL")}
+                        className={[
+                          segBtnBase,
+                          placa === "ALL" ? segActive : segInactive,
+                        ].join(" ")}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPlaca("COM")}
+                        className={[
+                          segBtnBase,
+                          placa === "COM" ? segActive : segInactive,
+                        ].join(" ")}
+                      >
+                        Com placa
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPlaca("SEM")}
+                        className={[
+                          segBtnBase,
+                          placa === "SEM" ? segActive : segInactive,
+                        ].join(" ")}
+                      >
+                        Sem placa
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-black tracking-widest text-white/45">
+                      SITUAÇÃO
+                    </span>
+
+                    <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-2 py-1 ring-1 ring-white/10">
+                      <button
+                        type="button"
+                        onClick={() => setSituacao("ALL")}
+                        className={[
+                          segBtnBase,
+                          situacao === "ALL" ? segActive : segInactive,
+                        ].join(" ")}
+                      >
+                        Todas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSituacao("VENDER")}
+                        className={[
+                          segBtnBase,
+                          situacao === "VENDER" ? segActive : segInactive,
+                        ].join(" ")}
+                      >
+                        Vender
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSituacao("ALUGAR")}
+                        className={[
+                          segBtnBase,
+                          situacao === "ALUGAR" ? segActive : segInactive,
+                        ].join(" ")}
+                      >
+                        Alugar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-xs text-white/45">
+                  Filtrando por: nome, cidade ou bairro
+                </div>
               </div>
             </div>
           </div>
@@ -551,7 +676,7 @@ export default function ImoveisPage() {
           // ===== LISTA =====
           <div className={card + " overflow-hidden"}>
             <div className="grid grid-cols-12 gap-0 border-b border-white/10 bg-white/5 px-6 py-4 text-xs font-extrabold tracking-widest text-white/70">
-              <div className="col-span-5">TÍTULO</div>
+              <div className="col-span-4">TÍTULO</div>
               <div className="col-span-2">CIDADE</div>
               <div className="col-span-2">VALOR</div>
               <div className="col-span-1">PLACA</div>
@@ -559,12 +684,12 @@ export default function ImoveisPage() {
               <div className="col-span-1 text-right">AÇÕES</div>
             </div>
 
-            {filteredImoveis.map((i) => (
+            {filtered.map((i) => (
               <div
                 key={i.id}
                 className="grid grid-cols-12 items-center gap-0 border-b border-white/5 px-6 py-5 hover:bg-white/[0.03]"
               >
-                <div className="col-span-5">
+                <div className="col-span-4">
                   <div className="font-extrabold">{i.titulo ?? "—"}</div>
                   <div className="mt-1 text-xs text-white/40">ID: {i.id}</div>
                 </div>
@@ -595,16 +720,29 @@ export default function ImoveisPage() {
                     : "—"}
                 </div>
 
-                <div className="col-span-1 flex justify-end gap-2">
+                <div className="col-span-2 flex justify-end gap-2 whitespace-nowrap">
+                  {admin ? (
+                    <button
+                      className={btnWarn}
+                      onClick={() =>
+                        router.push(`/imoveis/${i.id}/comprometer`)
+                      }
+                      title="Registrar venda/aluguel"
+                    >
+                      Comprometer
+                    </button>
+                  ) : null}
+
                   <button
                     className={btnGhost}
                     onClick={() => router.push(`/imoveis/${i.id}`)}
                   >
                     Ver
                   </button>
+
                   <button
                     className={btnDanger}
-                    onClick={() => removerImovel(i.id)}
+                    onClick={() => abrirConfirmRemover(i.id)}
                   >
                     Remover
                   </button>
@@ -612,16 +750,16 @@ export default function ImoveisPage() {
               </div>
             ))}
 
-            {filteredImoveis.length === 0 ? (
+            {filtered.length === 0 ? (
               <div className="px-6 py-10 text-white/55">
-                Nenhum imóvel encontrado para o filtro/pesquisa atual.
+                Nenhum imóvel encontrado com os filtros atuais.
               </div>
             ) : null}
           </div>
         ) : (
           // ===== PRÉVIA (CARDS) =====
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {filteredImoveis.map((i) => {
+            {filtered.map((i) => {
               const prev = previewCache[i.id];
               const isLoading = !!previewLoading[i.id];
 
@@ -631,7 +769,9 @@ export default function ImoveisPage() {
               );
 
               const main = ordered[0]?.url ? resolveImgUrl(ordered[0].url) : "";
-              const thumbs = ordered.slice(1, 5).map((f) => resolveImgUrl(f.url));
+              const thumbs = ordered
+                .slice(1, 5)
+                .map((f) => resolveImgUrl(f.url));
               const extra = Math.max(0, ordered.length - 5);
 
               const nomeContato =
@@ -647,7 +787,11 @@ export default function ImoveisPage() {
               return (
                 <div
                   key={i.id}
-                  className={[card, "p-7 transition-all", "hover:bg-white/[0.045]"].join(" ")}
+                  className={[
+                    card,
+                    "p-7 transition-all",
+                    "hover:bg-white/[0.045]",
+                  ].join(" ")}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -690,7 +834,9 @@ export default function ImoveisPage() {
                             />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center text-sm text-white/35">
-                              {isLoading ? "Carregando fotos…" : "Sem foto cadastrada"}
+                              {isLoading
+                                ? "Carregando fotos…"
+                                : "Sem foto cadastrada"}
                             </div>
                           )}
                         </div>
@@ -788,13 +934,28 @@ export default function ImoveisPage() {
                     </div>
 
                     <div className="flex gap-2">
+                      {admin ? (
+                        <button
+                          className={btnWarn}
+                          onClick={() =>
+                            router.push(`/imoveis/${i.id}/comprometer`)
+                          }
+                        >
+                          Comprometer
+                        </button>
+                      ) : null}
+
                       <button
                         className={btnGhost}
                         onClick={() => router.push(`/imoveis/${i.id}`)}
                       >
                         Ver
                       </button>
-                      <button className={btnDanger} onClick={() => removerImovel(i.id)}>
+
+                      <button
+                        className={btnDanger}
+                        onClick={() => abrirConfirmRemover(i.id)}
+                      >
                         Remover
                       </button>
                     </div>
@@ -802,15 +963,45 @@ export default function ImoveisPage() {
                 </div>
               );
             })}
-
-            {filteredImoveis.length === 0 ? (
-              <div className={card + " p-8 text-white/55"}>
-                Nenhum imóvel encontrado para o filtro/pesquisa atual.
-              </div>
-            ) : null}
           </div>
         )}
       </div>
     </div>
   );
+}
+
+/* =========================
+   Filtragem (memo-friendly)
+   ========================= */
+function filteredImoveisMemo(
+  imoveis: ImovelListItem[],
+  search: string,
+  placa: PlacaFilter,
+  situacao: SituacaoFilter
+) {
+  const q = (search ?? "").trim().toLowerCase();
+
+  function matchSearch(i: ImovelListItem) {
+    if (!q) return true;
+    const titulo = (i.titulo ?? "").toLowerCase();
+    const cidade = (i.cidade ?? "").toLowerCase();
+    const bairro = (i.bairro ?? "").toLowerCase();
+    return titulo.includes(q) || cidade.includes(q) || bairro.includes(q);
+  }
+
+  function matchPlaca(i: ImovelListItem) {
+    if (placa === "ALL") return true;
+    if (placa === "COM") return !!i.haPlaca;
+    return !i.haPlaca;
+  }
+
+  function matchSituacao(i: ImovelListItem) {
+    if (situacao === "ALL") return true;
+    const s = normalizeSituacao(i.situacao);
+    if (situacao === "VENDER") return s === "PARA VENDER";
+    if (situacao === "ALUGAR") return s === "PARA ALUGAR";
+    return true;
+  }
+
+  return imoveis.filter((i) => matchSearch(i) && matchPlaca(i) && matchSituacao(i));
 }

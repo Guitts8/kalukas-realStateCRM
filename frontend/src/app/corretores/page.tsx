@@ -4,14 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/services/api";
 import { decodeJwtPayload, getToken } from "@/services/auth";
+import { useConfirm } from "@/hooks/useConfirm";
 
 type Corretor = {
   id: string;
   name: string;
   email: string;
-  role: "ADMIN" | "USER";
-  isAdmin: boolean;
-  createdAt: string;
+  role?: "ADMIN" | "USER" | string;
+  isAdmin?: boolean;
+  createdAt?: string;
 };
 
 function formatDate(iso?: string) {
@@ -26,48 +27,15 @@ function getMeId(): string {
   return (payload?.id ?? "").toString();
 }
 
-function Segmented({
-  value,
-  onChange,
-}: {
-  value: "ALL" | "ADMIN" | "USER";
-  onChange: (v: "ALL" | "ADMIN" | "USER") => void;
-}) {
-  const base =
-    "rounded-full px-3 py-1.5 text-xs font-black tracking-widest transition ring-1";
-  const active =
-    "bg-amber-300/12 text-amber-100 ring-amber-300/25 shadow-[0_0_18px_rgba(251,191,36,0.10)]";
-  const normal = "bg-white/6 text-white/65 ring-white/10 hover:bg-white/8";
-
-  return (
-    <div className="inline-flex items-center gap-1 rounded-full bg-black/20 p-1 ring-1 ring-white/10">
-      <button
-        type="button"
-        onClick={() => onChange("ALL")}
-        className={`${base} ${value === "ALL" ? active : normal}`}
-      >
-        TODOS
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("ADMIN")}
-        className={`${base} ${value === "ADMIN" ? active : normal}`}
-      >
-        ADM
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("USER")}
-        className={`${base} ${value === "USER" ? active : normal}`}
-      >
-        CORRETOR
-      </button>
-    </div>
-  );
+function isUserAdmin(u: Corretor) {
+  return !!(u?.isAdmin || String(u?.role ?? "").toUpperCase() === "ADMIN");
 }
+
+type RoleFilter = "ALL" | "ADMIN" | "USER";
 
 export default function CorretoresPage() {
   const router = useRouter();
+  const { confirm, ConfirmUI } = useConfirm();
 
   const [items, setItems] = useState<Corretor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,9 +44,9 @@ export default function CorretoresPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ busca + filtro
+  // ✅ filtros
   const [q, setQ] = useState("");
-  const [perfil, setPerfil] = useState<"ALL" | "ADMIN" | "USER">("ALL");
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>("ALL");
 
   const headerCard =
     "rounded-3xl bg-white/[0.035] ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.55)]";
@@ -118,12 +86,19 @@ export default function CorretoresPage() {
     );
   }
 
+  const segmentedWrap =
+    "inline-flex items-center gap-1 rounded-full bg-white/5 p-1 ring-1 ring-white/10";
+  const segBtn =
+    "rounded-full px-3 py-1 text-xs font-extrabold tracking-wide transition";
+  const segOn = "bg-white/10 ring-1 ring-white/20 text-white";
+  const segOff = "text-white/60 hover:text-white/85";
+
   async function load() {
     try {
       setLoading(true);
       setError(null);
       const res = await api.get("/users");
-      setItems(res.data ?? []);
+      setItems(Array.isArray(res.data) ? res.data : []);
     } catch {
       setError("Erro ao carregar corretores.");
     } finally {
@@ -131,14 +106,24 @@ export default function CorretoresPage() {
     }
   }
 
-  async function remover(id: string) {
+  async function remover(id: string, nome?: string) {
     const meId = getMeId();
     if (id === meId) {
       setError("Você não pode remover seu próprio usuário.");
       return;
     }
 
-    if (!confirm("Deseja remover este corretor?")) return;
+    const ok = await confirm({
+      title: "Remover corretor",
+      description: `Deseja remover ${
+        nome?.trim() ? `"${nome}"` : "este corretor"
+      }? Essa ação não pode ser desfeita.`,
+      confirmText: "Remover",
+      cancelText: "Cancelar",
+      danger: true,
+    });
+
+    if (!ok) return;
 
     try {
       setActionLoading(id);
@@ -157,28 +142,27 @@ export default function CorretoresPage() {
 
   const stats = useMemo(() => {
     const total = items.length;
-    const admins = items.filter((x) => x.isAdmin || x.role === "ADMIN").length;
+    const admins = items.filter(isUserAdmin).length;
     const corretores = total - admins;
     return { total, admins, corretores };
   }, [items]);
 
-  // ✅ lista filtrada por busca + perfil
   const filtered = useMemo(() => {
-    const term = q.trim().toLowerCase();
+    const qq = q.trim().toLowerCase();
 
     return items.filter((u) => {
-      const admin = u.isAdmin || u.role === "ADMIN";
+      const admin = isUserAdmin(u);
 
-      // filtro por perfil
-      if (perfil === "ADMIN" && !admin) return false;
-      if (perfil === "USER" && admin) return false;
+      if (roleFilter === "ADMIN" && !admin) return false;
+      if (roleFilter === "USER" && admin) return false;
 
-      // busca
-      if (!term) return true;
-      const hay = `${u.name ?? ""} ${u.email ?? ""}`.toLowerCase();
-      return hay.includes(term);
+      if (!qq) return true;
+
+      const name = (u.name ?? "").toLowerCase();
+      const email = (u.email ?? "").toLowerCase();
+      return name.includes(qq) || email.includes(qq);
     });
-  }, [items, q, perfil]);
+  }, [items, q, roleFilter]);
 
   useEffect(() => {
     load();
@@ -188,6 +172,7 @@ export default function CorretoresPage() {
     return (
       <div className="mx-auto max-w-[1180px]">
         <div className={`${headerCard} p-6`}>Carregando…</div>
+        {ConfirmUI}
       </div>
     );
   }
@@ -213,55 +198,79 @@ export default function CorretoresPage() {
               <span className="rounded-full bg-amber-300/10 px-3 py-1 text-xs font-semibold text-amber-100 ring-1 ring-amber-300/25">
                 Admins: {stats.admins}
               </span>
-
-              <span className="rounded-full bg-white/6 px-3 py-1 text-xs font-semibold text-white/70 ring-1 ring-white/10">
+              <span className="rounded-full bg-white/6 px-3 py-1 text-xs font-semibold text-white/80 ring-1 ring-white/10">
                 Mostrando: {filtered.length}
               </span>
             </div>
-          </div>
 
-          {/* Busca + filtro + ações */}
-          <div className="flex flex-col gap-3 lg:items-end">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-              {/* Busca */}
-              <div className="relative">
+            {/* ✅ Barra de filtros (voltou) */}
+            <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex-1">
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Buscar por nome ou email…"
-                  className={
-                    "w-[320px] max-w-full rounded-xl border border-white/12 bg-black/30 px-4 py-2.5 " +
-                    "text-sm text-white/90 placeholder:text-white/25 outline-none " +
-                    "focus:border-white/18 focus:ring-2 focus:ring-amber-300/10"
-                  }
+                  placeholder="Buscar por nome ou email..."
+                  className="w-full rounded-2xl bg-white/[0.03] px-4 py-3 text-sm text-white/90 placeholder:text-white/35 ring-1 ring-white/10 outline-none focus:ring-2 focus:ring-amber-300/25"
                 />
-                {q ? (
-                  <button
-                    type="button"
-                    onClick={() => setQ("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs text-white/60 hover:bg-white/10"
-                    title="Limpar"
-                  >
-                    ✕
-                  </button>
-                ) : null}
               </div>
 
-              {/* Filtro */}
-              <Segmented value={perfil} onChange={setPerfil} />
-            </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-black tracking-widest text-white/45">
+                    PERFIL
+                  </span>
 
-            <div className="flex gap-3 justify-end">
-              <button
-                className={btnAmber}
-                onClick={() => router.push("/corretores/novo")}
-              >
-                Novo corretor
-              </button>
-              <button className={btnNeutral} onClick={load}>
-                Recarregar
-              </button>
+                  <div className={segmentedWrap}>
+                    <button
+                      type="button"
+                      onClick={() => setRoleFilter("ALL")}
+                      className={[segBtn, roleFilter === "ALL" ? segOn : segOff].join(" ")}
+                    >
+                      TODOS
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRoleFilter("ADMIN")}
+                      className={[segBtn, roleFilter === "ADMIN" ? segOn : segOff].join(" ")}
+                    >
+                      ADM
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRoleFilter("USER")}
+                      className={[segBtn, roleFilter === "USER" ? segOn : segOff].join(" ")}
+                    >
+                      CORRETOR
+                    </button>
+                  </div>
+                </div>
+
+                {(q.trim() || roleFilter !== "ALL") && (
+                  <button
+                    type="button"
+                    className={btnNeutral}
+                    onClick={() => {
+                      setQ("");
+                      setRoleFilter("ALL");
+                    }}
+                  >
+                    Limpar
+                  </button>
+                )}
+              </div>
             </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              className={btnAmber}
+              onClick={() => router.push("/corretores/novo")}
+            >
+              Novo corretor
+            </button>
+            <button className={btnNeutral} onClick={load}>
+              Recarregar
+            </button>
           </div>
         </div>
       </div>
@@ -288,7 +297,7 @@ export default function CorretoresPage() {
         </div>
 
         {filtered.map((u) => {
-          const admin = u.isAdmin || u.role === "ADMIN";
+          const admin = isUserAdmin(u);
           return (
             <div
               key={u.id}
@@ -305,9 +314,7 @@ export default function CorretoresPage() {
                 <div className="text-sm text-white/80">{u.email}</div>
               </div>
 
-              <div className="col-span-2">
-                {admin ? pill("admin") : pill("user")}
-              </div>
+              <div className="col-span-2">{admin ? pill("admin") : pill("user")}</div>
 
               <div className="col-span-2 flex justify-end gap-2">
                 <button
@@ -319,7 +326,7 @@ export default function CorretoresPage() {
                 <button
                   className={btnDanger}
                   disabled={actionLoading === u.id}
-                  onClick={() => remover(u.id)}
+                  onClick={() => remover(u.id, u.name)}
                 >
                   {actionLoading === u.id ? "Removendo…" : "Remover"}
                 </button>
@@ -330,10 +337,13 @@ export default function CorretoresPage() {
 
         {filtered.length === 0 ? (
           <div className="px-6 py-10 text-white/55">
-            Nenhum corretor encontrado para o filtro/pesquisa atual.
+            Nenhum corretor encontrado com esses filtros.
           </div>
         ) : null}
       </div>
+
+      {/* ✅ Confirm modal do site */}
+      {ConfirmUI}
     </div>
   );
 }

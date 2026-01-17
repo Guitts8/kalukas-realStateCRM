@@ -8,6 +8,8 @@ const authRoutes = require("./routes/auth.routes");
 const imovelRoutes = require("./routes/imovel.routes");
 const userRoutes = require("./routes/user.routes");
 const imovelFotoRoutes = require("./routes/imovelFoto.routes");
+const dashboardRoutes = require("./routes/dashboard.routes");
+
 
 const app = express();
 
@@ -27,6 +29,8 @@ app.use("/uploads", express.static(uploadsPath));
 app.use("/api/auth", authRoutes);
 app.use("/api/imoveis", imovelRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+
 
 // ⚠️ se você já usa isso em outra parte, mantém.
 app.use("/api/imoveis/fotos", imovelFotoRoutes);

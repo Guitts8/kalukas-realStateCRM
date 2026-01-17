@@ -1,5 +1,5 @@
 import ProtectedShell from "@/components/ProtectedShell";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return <ProtectedShell requireAdmin>{children}</ProtectedShell>;
+  return <ProtectedShell>{children}</ProtectedShell>;
 }

@@ -6,6 +6,7 @@ datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
+
 model User {
   id        String   @id @default(uuid())
   name      String
@@ -13,13 +14,17 @@ model User {
   password  String
 
   role      String   @default("USER")
-  isAdmin   Boolean  @default(false) // ✅ NOVO
+  isAdmin   Boolean  @default(false)
 
   createdAt DateTime @default(now())
 
   imoveis ImovelUser[]
-}
 
+  // Relatórios / dashboard
+  negociosComoCorretor ImovelNegocio[]     @relation("NegociosPorCorretor")
+  compromissosCriados  Imovel[]            @relation("ImovelComprometidoPor")
+  placaEventos         ImovelPlacaEvento[]
+}
 
 model Imovel {
   id              String   @id @default(uuid())
@@ -27,14 +32,12 @@ model Imovel {
   cidade          String
   bairro          String?
   endereco        String?
-  numeroEndereco  String?  // ✅ NOVO (número do endereço)
+  numeroEndereco  String?
   cep             String?
   pontoReferencia String?
   valor           Float
 
-  // (você disse que "ATIVO/VENDIDO/ALUGADO" foi desativado na UI,
-  // mas manter a coluna não atrapalha. Se quiser remover depois, fazemos outra migração)
-  status String @default("ATIVO")
+  status String @default("ATIVO") // ATIVO | COMPROMETIDO ...
 
   areaTerrenoTotal Float?
   areaConstruida   Float?
@@ -44,21 +47,80 @@ model Imovel {
   garagens    Int?
 
   descricao String?
-  situacao  String  @default("INATIVO") // ✅ "ALUGAR" | "VENDER" | "INATIVO" (controlado na UI)
+  situacao  String  @default("INATIVO") // PARA VENDER | PARA ALUGAR | INATIVO
   chave     String?
 
   haPlaca Boolean @default(false)
 
-  contatoNome     String? // ✅ NOVO
-  contatoTelefone String? // ✅ NOVO
+  contatoNome     String?
+  contatoTelefone String?
 
   ativo Boolean @default(true)
+
+  // ✅ Compromisso (venda/aluguel)
+  comprometidoAt       DateTime?
+  comprometidoByUserId String?
+  comprometidoByUser   User? @relation("ImovelComprometidoPor", fields: [comprometidoByUserId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  fotos    ImovelFoto[]
-  usuarios ImovelUser[]
+  fotos        ImovelFoto[]
+  usuarios     ImovelUser[]
+
+  // ✅ 1 negócio por imóvel (venda OU aluguel)
+  negocio      ImovelNegocio?
+
+  // ✅ histórico de placa
+  placaEventos ImovelPlacaEvento[]
+}
+
+model ImovelNegocio {
+  id             String   @id @default(uuid())
+  imovelId       String   @unique
+  tipo           String   // VENDA | ALUGUEL
+  dataOcorrencia DateTime @default(now())
+
+  // corretor responsável (corretagem)
+  corretorId String
+  corretor   User @relation("NegociosPorCorretor", fields: [corretorId], references: [id], onDelete: NoAction)
+
+  // ✅ valores separados (como você pediu)
+  valorVenda   Float?  // quando tipo=VENDA
+  aluguelMensal Float? // quando tipo=ALUGUEL
+  aluguelMeses  Int?
+  aluguelTotal  Float? // total do contrato (mensal * meses)
+
+  // ✅ totais / financeiro
+  valorBruto       Float
+  comissaoPercent  Float?
+  comissaoValor    Float
+  valorLiquido     Float?
+  lucroImobiliaria Float?
+
+  observacoes String?
+  createdAt   DateTime @default(now())
+
+  imovel Imovel @relation(fields: [imovelId], references: [id], onDelete: Cascade)
+
+  @@index([tipo, dataOcorrencia])
+  @@index([corretorId, dataOcorrencia])
+}
+
+model ImovelPlacaEvento {
+  id        String   @id @default(uuid())
+  imovelId  String
+  userId    String
+  acao      String   // COLOCOU | REMOVEU
+  createdAt DateTime @default(now())
+
+  imovel Imovel @relation(fields: [imovelId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([acao, createdAt])
+  @@index([userId, createdAt])
+  @@index([imovelId, createdAt])
 }
 
 model ImovelFoto {

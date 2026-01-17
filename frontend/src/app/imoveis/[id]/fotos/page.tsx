@@ -4,10 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/services/api";
 import { useAuth } from "@/contexts/authContext";
-import { isAdmin } from "@/services/auth"; // ✅ NOVO
+import { isAdmin } from "@/services/auth";
+
+import { useConfirm } from "@/hooks/useConfirm"; // ✅ NOVO
 
 import { DndContext, closestCenter } from "@dnd-kit/core";
-import { SortableContext, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  rectSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
 
 import { SortableFoto } from "../../../../../components/SortableFoto";
 
@@ -32,14 +38,12 @@ function normalizeFotoUrl(url?: string | null) {
    ========================= */
 const ui = {
   page: "p-6 text-white max-w-6xl mx-auto",
-  card:
-    "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_18px_60px_rgba(0,0,0,0.35)]",
+  card: "rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_18px_60px_rgba(0,0,0,0.35)]",
   btnBase:
     "inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition focus:outline-none focus:ring-2 focus:ring-white/15 border backdrop-blur disabled:opacity-50 disabled:cursor-not-allowed",
   btnGlass:
     "bg-white/[0.06] hover:bg-white/[0.09] border-white/10 text-white shadow-[0_10px_30px_rgba(0,0,0,0.25)]",
-  btnGlassSoft:
-    "bg-white/[0.04] hover:bg-white/[0.07] border-white/10 text-white",
+  btnGlassSoft: "bg-white/[0.04] hover:bg-white/[0.07] border-white/10 text-white",
   btnAmberPremium:
     "bg-amber-300/10 hover:bg-amber-300/14 border-amber-200/20 text-amber-100 shadow-[0_12px_38px_rgba(245,158,11,0.16)] ring-1 ring-amber-200/10",
   btnDanger:
@@ -115,7 +119,9 @@ function Lightbox({
     const wrap = thumbsRef.current;
     if (!wrap) return;
 
-    const el = wrap.querySelector(`[data-thumb="${idx}"]`) as HTMLElement | null;
+    const el = wrap.querySelector(
+      `[data-thumb="${idx}"]`
+    ) as HTMLElement | null;
     if (!el) return;
 
     el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
@@ -258,8 +264,11 @@ export default function GerenciarFotosPage() {
   const router = useRouter();
   const { user } = useAuth();
 
+  // ✅ modal confirm do site
+  const { confirm, ConfirmUI } = useConfirm();
+
   // ✅ Admin derivado do seu auth.ts (storage/user/jwt)
-  const admin = useMemo(() => isAdmin(), [user]); // ✅ NOVO
+  const admin = useMemo(() => isAdmin(), [user]);
 
   const [fotos, setFotos] = useState<Foto[]>([]);
   const [modoExcluir, setModoExcluir] = useState(false);
@@ -284,7 +293,9 @@ export default function GerenciarFotosPage() {
       setLoading(true);
       const res = await api.get(`/imoveis/${id}`);
 
-      const list: Foto[] = Array.isArray(res.data?.fotos) ? res.data.fotos.slice() : [];
+      const list: Foto[] = Array.isArray(res.data?.fotos)
+        ? res.data.fotos.slice()
+        : [];
 
       list.sort((a, b) => (a?.ordem ?? 0) - (b?.ordem ?? 0));
 
@@ -377,12 +388,21 @@ export default function GerenciarFotosPage() {
   async function excluirSelecionadas() {
     if (selecionadas.length === 0) return;
 
-    const confirmar = confirm(`Deseja excluir ${selecionadas.length} foto(s)?`);
-    if (!confirmar) return;
+    const ok = await confirm({
+      title: "Excluir fotos",
+      description: `Deseja excluir ${selecionadas.length} foto(s)? Essa ação não pode ser desfeita.`,
+      confirmText: `Excluir (${selecionadas.length})`,
+      cancelText: "Cancelar",
+      danger: true,
+    });
+
+    if (!ok) return;
 
     try {
       setSaving(true);
-      await Promise.all(selecionadas.map((fotoId) => api.delete(`/imoveis/fotos/${fotoId}`)));
+      await Promise.all(
+        selecionadas.map((fotoId) => api.delete(`/imoveis/fotos/${fotoId}`))
+      );
 
       setSelecionadas([]);
       setModoExcluir(false);
@@ -438,7 +458,7 @@ export default function GerenciarFotosPage() {
         </div>
       </div>
 
-      {/* ✅ Ações (Admin) agora usa isAdmin() */}
+      {/* ✅ Ações (Admin) */}
       {admin && (
         <div className={`${ui.card} p-5 mb-6`}>
           {!modoExcluir ? (
@@ -450,7 +470,10 @@ export default function GerenciarFotosPage() {
                 </div>
               </div>
 
-              <button onClick={() => setModoExcluir(true)} className={`${ui.btnBase} ${ui.btnDanger}`}>
+              <button
+                onClick={() => setModoExcluir(true)}
+                className={`${ui.btnBase} ${ui.btnDanger}`}
+              >
                 Excluir fotos
               </button>
             </div>
@@ -469,7 +492,9 @@ export default function GerenciarFotosPage() {
 
               <div className="flex flex-wrap gap-3">
                 <button onClick={selecionarTodas} className={`${ui.btnBase} ${ui.btnGlass}`}>
-                  {selecionadas.length === ordenadas.length ? "Desmarcar todas" : "Selecionar todas"}
+                  {selecionadas.length === ordenadas.length
+                    ? "Desmarcar todas"
+                    : "Selecionar todas"}
                 </button>
 
                 <button
@@ -520,8 +545,15 @@ export default function GerenciarFotosPage() {
 
       {/* Preview modal */}
       {previewIndex !== null && ordenadas.length > 0 && (
-        <Lightbox fotos={ordenadas} startIndex={previewIndex} onClose={() => setPreviewIndex(null)} />
+        <Lightbox
+          fotos={ordenadas}
+          startIndex={previewIndex}
+          onClose={() => setPreviewIndex(null)}
+        />
       )}
+
+      {/* ✅ Confirm modal do site */}
+      {ConfirmUI}
     </div>
   );
 }

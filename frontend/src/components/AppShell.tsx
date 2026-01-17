@@ -10,9 +10,15 @@ function isPublicRoute(path: string) {
   return path === "/login";
 }
 
-function isProtectedRoute(path: string) {
+// ✅ qualquer logado
+function isProtectedAnyAuthed(path: string) {
+  return path.startsWith("/imoveis");
+}
+
+// ✅ somente admin
+function isProtectedAdmin(path: string) {
   return (
-    path.startsWith("/imoveis") ||
+    path.startsWith("/dashboard") ||
     path.startsWith("/corretores") ||
     path.startsWith("/usuarios")
   );
@@ -26,7 +32,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const publicRoute = useMemo(() => isPublicRoute(pathname), [pathname]);
-  const protectedRoute = useMemo(() => isProtectedRoute(pathname), [pathname]);
+  const protectedAny = useMemo(() => isProtectedAnyAuthed(pathname), [pathname]);
+  const protectedAdmin = useMemo(() => isProtectedAdmin(pathname), [pathname]);
 
   useEffect(() => setReady(true), []);
 
@@ -35,12 +42,22 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
     if (publicRoute) return;
 
-    if (protectedRoute) {
+    // ✅ rotas que exigem apenas estar logado
+    if (protectedAny) {
+      if (!isAuthed()) {
+        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+      }
+      return;
+    }
+
+    // ✅ rotas somente admin
+    if (protectedAdmin) {
       if (!isAuthed() || !isAdmin()) {
         router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       }
+      return;
     }
-  }, [ready, publicRoute, protectedRoute, router, pathname]);
+  }, [ready, publicRoute, protectedAny, protectedAdmin, router, pathname]);
 
   function handleLogout() {
     clearAuth();
@@ -51,15 +68,22 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   if (publicRoute) return <>{children}</>;
 
-  if (protectedRoute) {
-    if (!isAuthed() || !isAdmin()) return null;
+  // ✅ decide se a rota deve renderizar shell (sidebar)
+  const shouldRenderShell = protectedAny || protectedAdmin;
+
+  if (shouldRenderShell) {
+    // ✅ se for admin-only e não for admin, não renderiza nada (redirect já roda no useEffect)
+    if (protectedAdmin && (!isAuthed() || !isAdmin())) return null;
+
+    // ✅ se for any-auth e não estiver logado, não renderiza nada (redirect já roda no useEffect)
+    if (protectedAny && !isAuthed()) return null;
 
     return (
-      <div className="min-h-screen bg-black text-white">
+<div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-white">
         <div className="flex min-h-screen">
           <aside
             className={[
-              "hidden lg:block border-r border-white/10",
+"hidden lg:block border-r border-zinc-900/10 dark:border-white/10",
               sidebarCollapsed ? "w-[86px]" : "w-[280px]",
             ].join(" ")}
           >

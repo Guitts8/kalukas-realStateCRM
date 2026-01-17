@@ -9,11 +9,12 @@ import { useAuth } from "@/contexts/authContext";
 
 export default function ProtectedShell({
   children,
-  requireAdmin = true,
+  requireAdmin = false,
 }: {
   children: React.ReactNode;
   requireAdmin?: boolean;
 }) {
+
   const router = useRouter();
   const pathname = usePathname() || "/imoveis";
   const { logout } = useAuth();
