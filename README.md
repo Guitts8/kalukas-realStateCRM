@@ -1,24 +1,29 @@
 Kaluka's CRM
 
+
+
+
+
+
+
+
 Kaluka's CRM is a Customer Relationship Management system designed for real estate agencies, focused on improving property management and strengthening client relationships.
 
-The goal of the project is to provide a modern, organized and scalable platform for managing real estate operations.
+The system aims to provide a modern, scalable and organized platform to manage real estate operations such as properties, clients and sales processes.
 
-Although the project is still under development, it already includes a complete architecture with API, backend and frontend, following good software design practices.
+Overview
 
-Project Overview
+Kaluka's CRM simplifies the daily workflow of real estate agencies, allowing agents and administrators to manage information in a centralized platform.
 
-Kaluka's CRM aims to simplify the daily workflow of real estate agencies, allowing them to manage properties, clients and business processes in a centralized system.
+Main goals of the project:
 
-Key objectives:
+Organize real estate listings
 
-Organize property listings
+Manage customer relationships
 
-Manage client relationships
+Centralize business data
 
-Centralize real estate data
-
-Provide integration through API
+Provide API integrations
 
 Deliver a modern and responsive interface
 
@@ -28,20 +33,27 @@ Current implemented features:
 
 Property management
 
-Client relationship management
+Client management
 
-Modern web interface
-
-REST API for integrations
+REST API
 
 Backend services
 
-Frontend application
+Web interface
+
+Modular architecture
+
+Planned features:
+
+Advanced analytics
+
+Automation tools
+
+External integrations
+
+Improved UI/UX
 
 Tech Stack
-
-The project uses modern technologies to ensure scalability and maintainability.
-
 Backend
 
 C#
@@ -54,80 +66,125 @@ Frontend
 
 Web interface
 
-Other tools
+Tools
 
 Git
 
 GitHub
 
-(You can expand this section as the project evolves.)
-
 Architecture
 
-The project follows a layered architecture, separating responsibilities to keep the codebase organized and maintainable.
+The system follows a layered architecture, separating responsibilities to keep the codebase scalable and maintainable.
 
-KalukasCRM
-│
-├── API
-│   └── Handles external communication and integrations
-│
-├── Backend
-│   └── Business logic and data processing
-│
-└── Frontend
-    └── User interface and presentation layer
-Project Status
+Architecture Flow
+Frontend
+   │
+   ▼
+API (REST Endpoints)
+   │
+   ▼
+Backend (Business Logic)
+   │
+   ▼
+Database
+Project Structure
+src/
+ ├── KalukasCRM.Api
+ ├── KalukasCRM.Backend
+ └── KalukasCRM.Frontend
 
-⚠️ This project is currently under active development.
+Each layer has a specific responsibility:
 
-New features and improvements are continuously being added as the system evolves.
+Frontend
+Responsible for the user interface and user interaction.
 
-Future Improvements
+API
+Handles communication between the frontend and backend, exposing REST endpoints.
 
-Planned features for upcoming versions:
+Backend
+Contains the core business logic and data processing.
 
-Advanced analytics and reporting
+Screenshots
 
-Better client interaction tools
+(You can add images of the system interface here)
 
-Integration with external real estate platforms
+Example:
 
-Automation features for agencies
+docs/dashboard.png
+docs/properties.png
 
-Improved UI/UX
+Example usage in README:
 
+![Dashboard](docs/dashboard.png)
+![Properties](docs/properties.png)
 Getting Started
 
 Clone the repository
 
 git clone https://github.com/yourusername/kalukas-crm.git
 
-Navigate to the project folder
+Enter the project folder
 
 cd kalukas-crm
 
-Run the project according to the API or frontend configuration.
+Run the backend and frontend according to the project configuration.
 
-(You can add more detailed setup instructions here later.)
+API Example
+
+Example of a REST request:
+
+GET /api/properties
+
+Response example:
+
+[
+  {
+    "id": 1,
+    "title": "Modern Apartment",
+    "price": 250000,
+    "city": "New York"
+  }
+]
+Roadmap
+
+Future improvements planned for the project:
+
+Advanced analytics dashboard
+
+Automated notifications
+
+Integration with real estate platforms
+
+Improved property filtering
+
+Mobile-friendly interface
 
 Contributing
 
 Contributions are welcome.
 
-If you would like to improve the project:
+Steps to contribute:
 
 Fork the repository
 
 Create a new branch
 
+git checkout -b feature/my-feature
+
 Commit your changes
+
+git commit -m "Add new feature"
+
+Push your branch
+
+git push origin feature/my-feature
 
 Open a Pull Request
 
 License
 
-This project is open-source and available under the MIT License.
+This project is licensed under the MIT License.
 
 Author
 
-Developed with dedication to improve real estate management systems.
+Developed to improve real estate management systems and provide a modern CRM solution for agencies.
